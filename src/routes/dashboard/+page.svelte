@@ -441,57 +441,57 @@
       {/if}
     </Card.Content>
   </Card.Root>
-  <div class="mt-4">
-    <Card.Root>
-      <Card.Header>
-        <Card.Title>Top Genres</Card.Title>
-        <Card.Description
-          >Listening count by genre (last 7 days)</Card.Description
+</div>
+<!-- Top Genres Card -->
+<div class="mt-4">
+  <Card.Root class="h-[400px]">
+    <Card.Header>
+      <Card.Title>Top Genres</Card.Title>
+      <Card.Description>Listening count by genre (last 7 days)</Card.Description
+      >
+    </Card.Header>
+    <Card.Content>
+      <Chart.Container config={genreChartConfig} class="h-[300px] w-full">
+        <BarChart
+          labels={{ offset: 12 }}
+          data={topGenresData}
+          orientation="horizontal"
+          yScale={scaleBand().padding(0.25)}
+          y="genre"
+          axis="y"
+          c={(d: (typeof topGenresData)[0]) => d.genre}
+          cRange={genreColors}
+          rule={false}
+          series={[
+            {
+              key: "count",
+              label: "Plays",
+            },
+          ]}
+          padding={{ right: 16 }}
+          props={{
+            bars: {
+              stroke: "none",
+              radius: 5,
+              rounded: "all",
+              motion: { type: "tween", duration: 500, easing: cubicInOut },
+            },
+            highlight: { area: { fill: "none" } },
+            yAxis: {
+              tickLabelProps: {
+                textAnchor: "start",
+                dx: 6,
+                class: "stroke-none fill-white!",
+              },
+              tickLength: 0,
+            },
+          }}
         >
-      </Card.Header>
-      <Card.Content>
-        <Chart.Container config={genreChartConfig}>
-          <BarChart
-            labels={{ offset: 12 }}
-            data={topGenresData}
-            orientation="horizontal"
-            yScale={scaleBand().padding(0.25)}
-            y="genre"
-            axis="y"
-            c={(d: (typeof topGenresData)[0]) => d.genre}
-            cRange={genreColors}
-            rule={false}
-            series={[
-              {
-                key: "count",
-                label: "Plays",
-              },
-            ]}
-            padding={{ right: 16 }}
-            props={{
-              bars: {
-                stroke: "none",
-                radius: 5,
-                rounded: "all",
-                motion: { type: "tween", duration: 500, easing: cubicInOut },
-              },
-              highlight: { area: { fill: "none" } },
-              yAxis: {
-                tickLabelProps: {
-                  textAnchor: "start",
-                  dx: 6,
-                  class: "stroke-none fill-white!",
-                },
-                tickLength: 0,
-              },
-            }}
-          >
-            {#snippet tooltip()}
-              <Chart.Tooltip hideLabel />
-            {/snippet}
-          </BarChart>
-        </Chart.Container>
-      </Card.Content>
-    </Card.Root>
-  </div>
+          {#snippet tooltip()}
+            <Chart.Tooltip hideLabel />
+          {/snippet}
+        </BarChart>
+      </Chart.Container>
+    </Card.Content>
+  </Card.Root>
 </div>
