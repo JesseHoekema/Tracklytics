@@ -2,6 +2,9 @@
   import { page } from "$app/stores";
   import HomeIcon from "@lucide/svelte/icons/home";
   import LeaderboardIcon from "@lucide/svelte/icons/chart-column";
+  import ArtistsIcon from "@lucide/svelte/icons/users";
+  import SongsIcon from "@lucide/svelte/icons/music";
+  import StreaksIcon from "@lucide/svelte/icons/flame";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import NavUser from "./nav-user.svelte";
   import { useSidebar } from "$lib/components/ui/sidebar/index.js";
@@ -40,6 +43,21 @@
       title: "Leaderboard",
       url: "/dashboard/leaderboard",
       icon: LeaderboardIcon,
+    },
+    {
+      title: "Artists",
+      url: "/dashboard/artists",
+      icon: ArtistsIcon,
+    },
+    {
+      title: "Songs",
+      url: "/dashboard/songs",
+      icon: SongsIcon,
+    },
+    {
+      title: "Streaks",
+      url: "/dashboard/streaks",
+      icon: StreaksIcon,
     },
   ];
 </script>

@@ -4,6 +4,7 @@
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import LogoutIcon from "@lucide/svelte/icons/log-out";
   import SettingsIcon from "@lucide/svelte/icons/settings";
+  import ConnectedAppsIcon from "@lucide/svelte/icons/blocks";
   import SunIcon from "@lucide/svelte/icons/sun";
   import MoonIcon from "@lucide/svelte/icons/moon";
   import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
@@ -114,6 +115,13 @@
               class="scale-0 rotate-90 !transition-all dark:scale-100 dark:rotate-0"
               >Light Mode</span
             >
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            class="cursor-pointer"
+            onclick={() => goto("/dashboard/intergration")}
+          >
+            <ConnectedAppsIcon class="mr-2 size-4" />
+            Connected Apps
           </DropdownMenu.Item>
         </DropdownMenu.Group>
         <DropdownMenu.Separator />

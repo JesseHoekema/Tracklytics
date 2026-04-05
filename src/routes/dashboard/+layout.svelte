@@ -9,6 +9,7 @@
   const titles: Record<string, string> = {
     "/dashboard": "Dashboard",
     "/dashboard/leaderboard": "Leaderboard",
+    "/dashboard/intergration": "Connected Apps",
   };
 
   const currentTitle = $derived(titles[page.url.pathname] ?? "Dashboard");
