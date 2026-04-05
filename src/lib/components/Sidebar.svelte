@@ -10,8 +10,13 @@
   import { useSidebar } from "$lib/components/ui/sidebar/index.js";
   import { mode } from "mode-watcher";
 
-  let { user }: { user: { name: string; email: string; avatar: string } } =
-    $props();
+  let {
+    user,
+    streakDays = 2,
+  }: {
+    user: { name: string; email: string; avatar: string };
+    streakDays?: number;
+  } = $props();
 
   const sidebar = useSidebar();
 
@@ -68,6 +73,29 @@
       <img src={logoSrc} alt="Logo" class={logoClass} />
     {/if}
   </div>
+
+  {#if streakDays > 0 && sidebar.state === "expanded"}
+    <div
+      class="mx-3 mt-3 rounded-xl border border-border/70 bg-muted/35 px-3 py-2.5"
+    >
+      <div
+        class="flex items-center gap-2.5 text-sm font-medium text-muted-foreground"
+      >
+        <span
+          class="inline-flex size-7 items-center justify-center rounded-lg"
+          style="background-color: #ff6f001a; color: #ff6f00;"
+        >
+          <StreaksIcon class="size-4" />
+        </span>
+        <p>
+          <span class="font-semibold" style="color: #ff6f00;"
+            >{streakDays} day{streakDays === 1 ? "" : "s"}</span
+          >
+          streak
+        </p>
+      </div>
+    </div>
+  {/if}
 
   <Sidebar.Content>
     <Sidebar.Group>

@@ -10,6 +10,9 @@
     "/dashboard": "Dashboard",
     "/dashboard/leaderboard": "Leaderboard",
     "/dashboard/intergration": "Connected Apps",
+    "/dashboard/artists": "Top Artists",
+    "/dashboard/songs": "Top Songs",
+    "/dashboard/streaks": "Streaks",
   };
 
   const currentTitle = $derived(titles[page.url.pathname] ?? "Dashboard");
