@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Select from "$lib/components/ui/select/index.js";
   import * as Chart from "$lib/components/ui/chart/index.js";
@@ -14,6 +15,18 @@
 
   let { data } = $props();
 
+  type RangeValue = "today" | "yesterday" | "7days" | "30days" | "all";
+  const validRanges: RangeValue[] = [
+    "today",
+    "yesterday",
+    "7days",
+    "30days",
+    "all",
+  ];
+
+  const isRangeValue = (value: string): value is RangeValue =>
+    validRanges.includes(value as RangeValue);
+
   const options = [
     { value: "today", label: "Today" },
     { value: "yesterday", label: "Yesterday" },
@@ -22,10 +35,34 @@
     { value: "all", label: "All Time" },
   ];
 
-  let selectedRange = $state("7days");
+  let selectedRange = $state<RangeValue>("7days");
+  $effect(() => {
+    selectedRange = (data.selectedRange ?? "7days") as RangeValue;
+  });
   const currentLabel = $derived(
     options.find((o) => o.value === selectedRange)?.label ?? "Select range",
   );
+
+  const listeningTimeLabel = $derived.by(() => {
+    const t = data.totalListeningTime;
+    if (!t) return "0h 0m 0s";
+    return `${t.hours}h ${t.minutes}m ${t.seconds}s`;
+  });
+
+  const selectedRangeLabel = $derived(
+    options.find((o) => o.value === selectedRange)?.label ?? "Last 7 Days",
+  );
+
+  const onRangeChange = async (value: string) => {
+    if (!isRangeValue(value) || value === data.selectedRange) return;
+    selectedRange = value;
+    const params = new URLSearchParams(window.location.search);
+    params.set("range", value);
+    await goto(`/dashboard?${params.toString()}`, {
+      keepFocus: true,
+      noScroll: true,
+    });
+  };
 
   const genreColors = [
     "var(--chart-1)",
@@ -44,31 +81,20 @@
     return genreColors[Math.abs(hash) % genreColors.length];
   };
 
-  const topArtistsData = [
-    { artist: "Goldkimono", minutes: 120 },
-    { artist: "FKJ", minutes: 85 },
-    { artist: "Tash Sultana", minutes: 70 },
-    { artist: "Khruangbin", minutes: 50 },
-    { artist: "Jungle", minutes: 40 },
-    { artist: "Masego", minutes: 35 },
-    { artist: "Maribou State", minutes: 30 },
-    { artist: "L'Impératrice", minutes: 25 },
-    { artist: "Parcels", minutes: 22 },
-    { artist: "Poolside", minutes: 18 },
-  ];
+  const topArtistsData = $derived(
+    (data.topArtists ?? []).map((item) => ({
+      artist: item.artist,
+      plays: item.playCount,
+    })),
+  );
 
-  const topSongsData = [
-    { song: "Does it move you", artist: "Goldkimono", minutes: 95 },
-    { song: "Ylang Ylang", artist: "FKJ", minutes: 65 },
-    { song: "Jungle", artist: "Tash Sultana", minutes: 60 },
-    { song: "Texas Sun", artist: "Khruangbin", minutes: 45 },
-    { song: "Casio", artist: "Jungle", minutes: 38 },
-    { song: "Tadow", artist: "Masego", minutes: 32 },
-    { song: "Steal", artist: "Maribou State", minutes: 28 },
-    { song: "Anomalie bleue", artist: "L'Impératrice", minutes: 22 },
-    { song: "Lightenup", artist: "Parcels", minutes: 20 },
-    { song: "Harvest Moon", artist: "Poolside", minutes: 15 },
-  ];
+  const topSongsData = $derived(
+    (data.topSongs ?? []).map((item) => ({
+      song: item.song,
+      artist: item.artist,
+      plays: item.playCount,
+    })),
+  );
 
   const topGenresData = [
     { genre: "Indie Pop", count: 450 },
@@ -80,18 +106,33 @@
   ];
 
   const chartConfig = {
-    minutes: { label: "Minutes", color: "var(--chart-1)" },
+    plays: { label: "Plays", color: "var(--chart-1)" },
   } satisfies Chart.ChartConfig;
 
   const genreChartConfig = {
     count: { label: "Plays", color: "var(--chart-1)" },
   } satisfies Chart.ChartConfig;
 
-  const pages = [topArtistsData.slice(0, 5), topArtistsData.slice(5, 10)];
-  const songPages = [topSongsData.slice(0, 5), topSongsData.slice(5, 10)];
+  const pages = $derived([
+    topArtistsData.slice(0, 5),
+    topArtistsData.slice(5, 10),
+  ]);
+  const songPages = $derived([
+    topSongsData.slice(0, 5),
+    topSongsData.slice(5, 10),
+  ]);
 
-  const globalMax = Math.max(...topArtistsData.map((d) => d.minutes));
-  const songGlobalMax = Math.max(...topSongsData.map((d) => d.minutes));
+  const globalMax = $derived(
+    topArtistsData.length > 0
+      ? Math.max(...topArtistsData.map((d) => d.plays))
+      : 1,
+  );
+  const songGlobalMax = $derived(
+    topSongsData.length > 0 ? Math.max(...topSongsData.map((d) => d.plays)) : 1,
+  );
+
+  const topArtistName = $derived(topArtistsData[0]?.artist ?? "No data");
+  const topSongName = $derived(topSongsData[0]?.song ?? "No data");
 
   let chartType = $state("pie");
   let scrollContainer = $state<HTMLDivElement | null>(null);
@@ -121,7 +162,11 @@
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-2xl font-bold">Welcome back! {data.user?.name ?? "Guest"}</h1>
 
-  <Select.Root type="single" bind:value={selectedRange}>
+  <Select.Root
+    type="single"
+    bind:value={selectedRange}
+    onValueChange={onRangeChange}
+  >
     <Select.Trigger class="w-[200px]">
       <CalendarIcon class="mr-2 size-4 opacity-50" />
       {currentLabel}
@@ -144,7 +189,7 @@
       >
     </Card.Header>
     <Card.Content>
-      <div class="text-2xl font-bold font-sans">10m</div>
+      <div class="text-2xl font-bold font-sans">{listeningTimeLabel}</div>
     </Card.Content>
   </Card.Root>
 
@@ -155,7 +200,7 @@
       >
     </Card.Header>
     <Card.Content>
-      <div class="text-2xl font-bold">Goldkimono</div>
+      <div class="text-2xl font-bold">{topArtistName}</div>
     </Card.Content>
   </Card.Root>
 
@@ -166,7 +211,7 @@
       >
     </Card.Header>
     <Card.Content>
-      <div class="text-2xl font-bold">Does it move you</div>
+      <div class="text-2xl font-bold">{topSongName}</div>
     </Card.Content>
   </Card.Root>
 
@@ -188,7 +233,7 @@
       <div class="space-y-1.5">
         <Card.Title>Top Artists</Card.Title>
         <Card.Description
-          >Listening time in minutes (last 7 days)</Card.Description
+          >Most played artists ({selectedRangeLabel})</Card.Description
         >
       </div>
       <div class="flex items-center gap-4">
@@ -240,9 +285,9 @@
                   axis="x"
                   series={[
                     {
-                      key: "minutes",
-                      label: "Minutes",
-                      color: chartConfig.minutes.color,
+                      key: "plays",
+                      label: "Plays",
+                      color: chartConfig.plays.color,
                     },
                   ]}
                   props={{
@@ -273,7 +318,7 @@
           <PieChart
             data={topArtistsData}
             key="artist"
-            value="minutes"
+            value="plays"
             label="artist"
             c={(d: (typeof topArtistsData)[0]) => getColor(d.artist)}
             innerRadius={0}
@@ -316,7 +361,7 @@
       <div class="space-y-1.5">
         <Card.Title>Top Songs</Card.Title>
         <Card.Description
-          >Listening time in minutes (last 7 days)</Card.Description
+          >Most played songs ({selectedRangeLabel})</Card.Description
         >
       </div>
       <div class="flex items-center gap-4">
@@ -371,9 +416,9 @@
                   axis="x"
                   series={[
                     {
-                      key: "minutes",
-                      label: "Minutes",
-                      color: chartConfig.minutes.color,
+                      key: "plays",
+                      label: "Plays",
+                      color: chartConfig.plays.color,
                     },
                   ]}
                   props={{
@@ -404,7 +449,7 @@
           <PieChart
             data={topSongsData}
             key="song"
-            value="minutes"
+            value="plays"
             label="song"
             c={(d: (typeof topSongsData)[0]) => getColor(d.song)}
             innerRadius={0}

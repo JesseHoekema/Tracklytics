@@ -8,6 +8,8 @@ import { prisma } from "./prisma-worker";
 const LAST_FM_API = "https://ws.audioscrobbler.com/2.0";
 const API_KEY = process.env.LASTFM_API_KEY!;
 const PAGE_SIZE = 200;
+const LASTFM_MAX_RETRIES = 4;
+const LASTFM_RETRY_BASE_DELAY_MS = 2000;
 
 const SPOTIFY_ACCOUNTS_API = "https://accounts.spotify.com/api/token";
 const SPOTIFY_SEARCH_API = "https://api.spotify.com/v1/search";
@@ -185,20 +187,37 @@ async function fetchPage(
   if (from) url.searchParams.set("from", String(from));
   if (to) url.searchParams.set("to", String(to));
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Last.fm error: ${res.status}`);
+  for (let attempt = 0; attempt <= LASTFM_MAX_RETRIES; attempt++) {
+    const res = await fetch(url);
 
-  const json = await res.json();
+    if (!res.ok) {
+      const shouldRetry = res.status >= 500 && attempt < LASTFM_MAX_RETRIES;
+      if (shouldRetry) {
+        const waitMs = LASTFM_RETRY_BASE_DELAY_MS * (attempt + 1);
+        console.warn(
+          `[${username}] Last.fm ${res.status} on page ${page}; retry ${attempt + 1}/${LASTFM_MAX_RETRIES} in ${Math.round(waitMs / 1000)}s`,
+        );
+        await sleep(waitMs);
+        continue;
+      }
 
-  console.log(
-    `Fetched page ${page} for ${username}: ${json.recenttracks?.track?.length || 0} tracks`,
-  );
+      throw new Error(`Last.fm error: ${res.status}`);
+    }
 
-  if (json.error) {
-    throw new Error(`Last.fm API error ${json.error}: ${json.message}`);
+    const json = await res.json();
+
+    console.log(
+      `Fetched page ${page} for ${username}: ${json.recenttracks?.track?.length || 0} tracks`,
+    );
+
+    if (json.error) {
+      throw new Error(`Last.fm API error ${json.error}: ${json.message}`);
+    }
+
+    return json;
   }
 
-  return json;
+  throw new Error("Last.fm error: retries exhausted");
 }
 
 function sleep(ms: number) {

@@ -9,7 +9,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const { username, range, from, to } = await request.json();
   if (!username) throw error(400, "Last.fm username required");
 
-  // Cancel any existing active job first
   const existing = await prisma.importJob.findFirst({
     where: {
       userId: locals.user.id,

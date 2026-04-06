@@ -15,7 +15,6 @@ export const GET: RequestHandler = async ({ locals, params }) => {
   return json(job);
 };
 
-// Stop but keep data
 export const DELETE: RequestHandler = async ({ locals, params }) => {
   if (!locals.user) throw error(401, "Unauthorized");
 
@@ -28,9 +27,7 @@ export const DELETE: RequestHandler = async ({ locals, params }) => {
   try {
     const bullJob = await importQueue.getJob(params.jobId);
     if (bullJob) await bullJob.remove();
-  } catch {
-    // locked by worker, will stop on next iteration via DB status check
-  }
+  } catch {}
 
   await prisma.importJob.updateMany({
     where: { id: params.jobId, userId: locals.user.id },
@@ -40,7 +37,6 @@ export const DELETE: RequestHandler = async ({ locals, params }) => {
   return json({ ok: true });
 };
 
-// Stop and delete all data
 export const PATCH: RequestHandler = async ({ locals, params }) => {
   if (!locals.user) throw error(401, "Unauthorized");
 
@@ -53,23 +49,17 @@ export const PATCH: RequestHandler = async ({ locals, params }) => {
   try {
     const bullJob = await importQueue.getJob(params.jobId);
     if (bullJob) await bullJob.remove();
-  } catch {
-    // locked by worker, will stop on next iteration
-  }
+  } catch {}
 
-  // Use updateMany to avoid optimistic concurrency conflicts —
-  // it does not read-then-write, just fires a raw UPDATE
   await prisma.importJob.updateMany({
     where: { id: params.jobId, userId: locals.user.id },
     data: { status: "cancelled" },
   });
 
-  // Delete scrobbles separately
   await prisma.scrobble.deleteMany({
     where: { userId: locals.user.id },
   });
 
-  // Delete the job record last
   await prisma.importJob.deleteMany({
     where: { id: params.jobId, userId: locals.user.id },
   });

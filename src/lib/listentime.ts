@@ -1,0 +1,213 @@
+import { prisma } from "$lib/prisma";
+
+type TimeParts = {
+  hours: number;
+  minutes: number;
+  seconds: number;
+};
+
+type TimeSlot =
+  | "today"
+  | "yesterday"
+  | "last 7 days"
+  | "last 30 days"
+  | "all time";
+
+type DateRange = {
+  gte?: Date;
+  lt?: Date;
+};
+
+export type TotalListeningTime = {
+  timeSlot: TimeSlot;
+  totalSeconds: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+};
+
+type TopLimit = number | "all";
+
+export type ArtistListenCount = {
+  artist: string;
+  playCount: number;
+};
+
+export type ArtistListenCountsResult = {
+  timeSlot: TimeSlot;
+  limit: TopLimit;
+  artists: ArtistListenCount[];
+};
+
+export type SongListenCount = {
+  song: string;
+  artist: string;
+  playCount: number;
+};
+
+export type SongListenCountsResult = {
+  timeSlot: TimeSlot;
+  limit: TopLimit;
+  songs: SongListenCount[];
+};
+
+export function secondsToHMS(totalSeconds: number): TimeParts {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return { hours, minutes, seconds };
+}
+
+function startOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function getDateRangeForTimeSlot(
+  timeSlot: TimeSlot,
+  now = new Date(),
+): DateRange {
+  const todayStart = startOfDay(now);
+
+  if (timeSlot === "today") {
+    return {
+      gte: todayStart,
+      lt: addDays(todayStart, 1),
+    };
+  }
+
+  if (timeSlot === "yesterday") {
+    const yesterdayStart = addDays(todayStart, -1);
+    return {
+      gte: yesterdayStart,
+      lt: todayStart,
+    };
+  }
+
+  if (timeSlot === "last 7 days") {
+    return {
+      gte: addDays(todayStart, -6),
+      lt: addDays(todayStart, 1),
+    };
+  }
+
+  if (timeSlot === "last 30 days") {
+    return {
+      gte: addDays(todayStart, -29),
+      lt: addDays(todayStart, 1),
+    };
+  }
+
+  return {};
+}
+
+export async function getTotalListeningTimeForUser(
+  userId: string,
+  timeSlot: TimeSlot,
+): Promise<TotalListeningTime> {
+  const playedAt = getDateRangeForTimeSlot(timeSlot);
+
+  const result = await prisma.scrobble.aggregate({
+    _sum: { durationSec: true },
+    where: {
+      userId,
+      ...(timeSlot === "all time" ? {} : { playedAt }),
+    },
+  });
+
+  const totalSeconds = Math.max(0, result._sum.durationSec ?? 0);
+  const { hours, minutes, seconds } = secondsToHMS(totalSeconds);
+
+  return {
+    timeSlot,
+    totalSeconds,
+    hours,
+    minutes,
+    seconds,
+  };
+}
+
+export async function getArtistListenCountsForUser(
+  userId: string,
+  timeSlot: TimeSlot,
+  limit: TopLimit = 10,
+): Promise<ArtistListenCountsResult> {
+  const playedAt = getDateRangeForTimeSlot(timeSlot);
+  const normalizedLimit =
+    limit === "all" ? "all" : Math.max(1, Math.floor(limit));
+
+  const rows = await prisma.scrobble.groupBy({
+    by: ["artist"],
+    where: {
+      userId,
+      ...(timeSlot === "all time" ? {} : { playedAt }),
+      artist: {
+        not: "",
+      },
+    },
+    _count: {
+      _all: true,
+    },
+    orderBy: [{ _count: { artist: "desc" } }, { artist: "asc" }],
+    ...(normalizedLimit === "all" ? {} : { take: normalizedLimit }),
+  });
+
+  return {
+    timeSlot,
+    limit: normalizedLimit,
+    artists: rows.map((row) => ({
+      artist: row.artist,
+      playCount: row._count._all,
+    })),
+  };
+}
+
+export async function getSongListenCountsForUser(
+  userId: string,
+  timeSlot: TimeSlot,
+  limit: TopLimit = 10,
+): Promise<SongListenCountsResult> {
+  const playedAt = getDateRangeForTimeSlot(timeSlot);
+  const normalizedLimit =
+    limit === "all" ? "all" : Math.max(1, Math.floor(limit));
+
+  const rows = await prisma.scrobble.groupBy({
+    by: ["track", "artist"],
+    where: {
+      userId,
+      ...(timeSlot === "all time" ? {} : { playedAt }),
+      track: {
+        not: "",
+      },
+    },
+    _count: {
+      _all: true,
+    },
+    orderBy: [
+      { _count: { track: "desc" } },
+      { track: "asc" },
+      { artist: "asc" },
+    ],
+    ...(normalizedLimit === "all" ? {} : { take: normalizedLimit }),
+  });
+
+  return {
+    timeSlot,
+    limit: normalizedLimit,
+    songs: rows.map((row) => ({
+      song: row.track,
+      artist: row.artist,
+      playCount: row._count._all,
+    })),
+  };
+}
+
+export type { TimeSlot, TimeParts };
