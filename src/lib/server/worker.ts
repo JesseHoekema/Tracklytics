@@ -17,9 +17,9 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const SPOTIFY_BATCH_SIZE = 50;
 const SPOTIFY_BATCH_PARALLELISM = 4;
 const SPOTIFY_SEARCH_PARALLELISM = 6;
-const SPOTIFY_ID_CACHE_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
-const SPOTIFY_MISS_CACHE_TTL_SEC = 60 * 60 * 6; // 6 hours
-const SPOTIFY_DURATION_CACHE_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
+const SPOTIFY_ID_CACHE_TTL_SEC = 60 * 60 * 24 * 30; // 30 dagen
+const SPOTIFY_MISS_CACHE_TTL_SEC = 60 * 60 * 6; // 6 uurtjes
+const SPOTIFY_DURATION_CACHE_TTL_SEC = 60 * 60 * 24 * 30; // 30 dagen :)
 const SPOTIFY_CACHE_MISS = "__MISS__";
 
 type SpotifyTokenState = {
@@ -68,7 +68,6 @@ new Worker(
     });
 
     try {
-      // Use the real page size here; limit=1 would inflate totalPages.
       const first = await fetchPage(username, 1, PAGE_SIZE, from, to);
       const attr = first.recenttracks["@attr"];
       const totalPagesFromApi = parseInt(attr.totalPages);
@@ -87,7 +86,6 @@ new Worker(
       });
 
       for (let page = 1; page <= total; page++) {
-        // Check for cancellation
         const current = await prisma.importJob.findUnique({
           where: { id: jobId },
         });
@@ -99,7 +97,6 @@ new Worker(
         const data = await fetchPage(username, page, PAGE_SIZE, from, to);
         const rawTracks = data.recenttracks.track;
 
-        // Last.fm returns an object instead of array when there's only 1 track
         const tracksArray = Array.isArray(rawTracks) ? rawTracks : [rawTracks];
 
         const scrobbles = tracksArray
@@ -117,13 +114,11 @@ new Worker(
         if (scrobbles.length > 0) {
           await enrichScrobbleDurations(scrobbles, username);
 
-          // Insert in chunks to avoid hitting MariaDB's max packet size
           const chunkSize = 50;
           for (let i = 0; i < scrobbles.length; i += chunkSize) {
             const chunk = scrobbles.slice(i, i + chunkSize);
             await prisma.$transaction(
               chunk.flatMap((s) => [
-                // Re-import behavior: replace an existing scrobble at the same timestamp.
                 prisma.scrobble.deleteMany({
                   where: {
                     userId: s.userId,
@@ -145,7 +140,6 @@ new Worker(
           `[${username}] Page ${page}/${total} — ${scrobbles.length} tracks stored`,
         );
 
-        // Be nice to Last.fm (200ms between pages)
         await sleep(200);
       }
 
@@ -180,7 +174,7 @@ async function fetchPage(
   url.searchParams.set("api_key", API_KEY);
   url.searchParams.set("format", "json");
   url.searchParams.set("limit", String(limit));
-  url.searchParams.set("page", String(page)); // was hardcoded to "200" before
+  url.searchParams.set("page", String(page));
   if (from) url.searchParams.set("from", String(from));
   if (to) url.searchParams.set("to", String(to));
 
