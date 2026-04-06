@@ -458,9 +458,10 @@ async function spotifyRequest(
       const retryAfterSeconds = retryAfterHeader
         ? Number.parseInt(retryAfterHeader, 10)
         : Number.NaN;
-      const waitMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-        ? retryAfterSeconds * 1000
-        : 30_000;
+      const waitMs =
+        Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? retryAfterSeconds * 1000
+          : 30_000;
 
       console.warn(
         `Spotify rate limited for ${url}; retrying in ${Math.round(waitMs / 1000)}s`,
