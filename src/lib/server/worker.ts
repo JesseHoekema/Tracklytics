@@ -10,6 +10,8 @@ const API_KEY = process.env.LASTFM_API_KEY!;
 const PAGE_SIZE = 200;
 const LASTFM_MAX_RETRIES = 4;
 const LASTFM_RETRY_BASE_DELAY_MS = 2000;
+const AUTO_SYNC_INTERVAL_MS = 3 * 60 * 1000;
+const AUTO_SYNC_LOOKBACK_SEC = 60 * 60;
 
 const SPOTIFY_ACCOUNTS_API = "https://accounts.spotify.com/api/token";
 const SPOTIFY_SEARCH_API = "https://api.spotify.com/v1/search";
@@ -65,6 +67,7 @@ type SpotifyTracksResponse = {
 
 let spotifyTokenState: SpotifyTokenState | null = null;
 let spotifyDisabled = false;
+let autoSyncRunning = false;
 
 new Worker(
   "lastfm-import",
@@ -611,5 +614,122 @@ async function getSpotifyAccessToken() {
 
   return accessToken;
 }
+
+async function syncRecentScrobblesForUser(userId: string, username: string) {
+  const to = Math.floor(Date.now() / 1000);
+  const from = to - AUTO_SYNC_LOOKBACK_SEC;
+
+  const first = await fetchPage(username, 1, PAGE_SIZE, from, to);
+  const attr = first.recenttracks?.["@attr"];
+  const totalTracks = parseInt(attr?.total ?? "0", 10);
+  const totalPagesFromApi = parseInt(attr?.totalPages ?? "1", 10);
+  const total = Number.isFinite(totalPagesFromApi)
+    ? totalPagesFromApi
+    : Math.max(1, Math.ceil(totalTracks / PAGE_SIZE));
+
+  let imported = 0;
+  for (let page = 1; page <= total; page++) {
+    const data =
+      page === 1 ? first : await fetchPage(username, page, PAGE_SIZE, from, to);
+    const rawTracks = data.recenttracks.track;
+    const tracksArray = Array.isArray(rawTracks) ? rawTracks : [rawTracks];
+
+    const scrobbles = tracksArray
+      .filter((t: any) => t && !t["@attr"]?.nowplaying && t.date?.uts)
+      .map(
+        (t: any): PendingScrobble => ({
+          userId,
+          artist: t.artist["#text"] || t.artist?.name || "",
+          track: t.name || "",
+          album: t.album?.["#text"] || null,
+          playedAt: new Date(parseInt(t.date.uts, 10) * 1000),
+        }),
+      );
+
+    if (scrobbles.length > 0) {
+      await enrichScrobbleDurations(scrobbles, username);
+
+      const chunkSize = 50;
+      for (let i = 0; i < scrobbles.length; i += chunkSize) {
+        const chunk = scrobbles.slice(i, i + chunkSize);
+        await prisma.$transaction(
+          chunk.flatMap((s) => [
+            prisma.scrobble.deleteMany({
+              where: {
+                userId: s.userId,
+                playedAt: s.playedAt,
+              },
+            }),
+            prisma.scrobble.create({ data: s }),
+          ]),
+        );
+      }
+    }
+
+    imported += scrobbles.length;
+  }
+
+  console.log(
+    `[${username}] Auto-sync imported ${imported} scrobbles from the last hour`,
+  );
+}
+
+async function runAutoSyncCycle() {
+  if (autoSyncRunning) {
+    return;
+  }
+
+  autoSyncRunning = true;
+  try {
+    const jobs = await prisma.importJob.findMany({
+      where: {
+        username: {
+          not: "",
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      select: {
+        userId: true,
+        username: true,
+      },
+    });
+
+    const targets: Array<{ userId: string; username: string }> = [];
+    const seenUserIds = new Set<string>();
+    for (const job of jobs) {
+      if (seenUserIds.has(job.userId)) continue;
+      seenUserIds.add(job.userId);
+      targets.push({ userId: job.userId, username: job.username });
+    }
+
+    if (targets.length === 0) {
+      return;
+    }
+
+    console.log(`[auto-sync] Starting cycle for ${targets.length} users`);
+
+    for (const target of targets) {
+      try {
+        await syncRecentScrobblesForUser(target.userId, target.username);
+      } catch (error: any) {
+        console.warn(
+          `[${target.username}] Auto-sync failed: ${error?.message ?? String(error)}`,
+        );
+      }
+    }
+
+    console.log("[auto-sync] Cycle complete");
+  } finally {
+    autoSyncRunning = false;
+  }
+}
+
+setInterval(() => {
+  void runAutoSyncCycle();
+}, AUTO_SYNC_INTERVAL_MS);
+
+void runAutoSyncCycle();
 
 console.log("Worker started");
