@@ -108,6 +108,7 @@ model Scrobble {
   album     String?
   playedAt  DateTime
   durationSec Int      @default(210000)
+  spotifyImageUrl String? @db.Text
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, playedAt])   // add this

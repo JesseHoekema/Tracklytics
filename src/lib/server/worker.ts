@@ -34,6 +34,7 @@ type PendingScrobble = {
   album: string | null;
   playedAt: Date;
   durationSec?: number;
+  spotifyImageUrl?: string;
 };
 
 type SpotifySearchResponse = {
@@ -47,7 +48,13 @@ type SpotifySearchResponse = {
 };
 
 type SpotifyTracksResponse = {
-  tracks?: Array<{ id?: string; duration_ms?: number } | null>;
+  tracks?: Array<{
+    id?: string;
+    duration_ms?: number;
+    album?: {
+      images?: Array<{ url?: string; height?: number; width?: number }>;
+    };
+  } | null>;
   error?: {
     status?: number;
     message?: string;
@@ -219,6 +226,10 @@ function durationRedisKey(trackId: string): string {
   return `spotify:track-duration:v1:${trackId}`;
 }
 
+function imageUrlRedisKey(trackId: string): string {
+  return `spotify:track-image:v1:${trackId}`;
+}
+
 function chunkArray<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
@@ -277,16 +288,17 @@ async function enrichScrobbleDurations(
     const songKeys = Array.from(unique.keys());
     const resolvedTrackIds = await resolveSpotifyTrackIds(songKeys, unique);
     const ids = Array.from(new Set(Array.from(resolvedTrackIds.values())));
-    const durationById = await getSpotifyDurationsById(ids);
+    const trackDataById = await getSpotifyTrackData(ids);
 
     let enrichedCount = 0;
     for (const scrobble of scrobbles) {
       const songKey = toSongKey(scrobble.artist, scrobble.track);
       const trackId = resolvedTrackIds.get(songKey);
       if (!trackId) continue;
-      const durationSec = durationById.get(trackId);
-      if (durationSec !== undefined) {
-        scrobble.durationSec = durationSec;
+      const trackData = trackDataById.get(trackId);
+      if (trackData) {
+        scrobble.durationSec = trackData.durationSec;
+        scrobble.spotifyImageUrl = trackData.spotifyImageUrl;
         enrichedCount += 1;
       }
     }
@@ -355,46 +367,82 @@ async function resolveSpotifyTrackIds(
   return resolved;
 }
 
-async function getSpotifyDurationsById(trackIds: string[]) {
-  const durationById = new Map<string, number>();
-  if (trackIds.length === 0) return durationById;
+async function getSpotifyTrackData(trackIds: string[]) {
+  const trackDataById = new Map<
+    string,
+    { durationSec: number; spotifyImageUrl?: string }
+  >();
+  if (trackIds.length === 0) return trackDataById;
 
   const redisKeys = trackIds.map(durationRedisKey);
-  const cachedValues = await connection.mget(...redisKeys);
+  const imageKeys = trackIds.map(imageUrlRedisKey);
+  const allKeys = [...redisKeys, ...imageKeys];
+  const cachedValues = await connection.mget(...allKeys);
 
   const missingIds: string[] = [];
+  const missingImageIds: string[] = [];
+
   for (let i = 0; i < trackIds.length; i++) {
     const trackId = trackIds[i];
-    const cached = cachedValues[i];
-    if (!cached) {
+    const cachedDuration = cachedValues[i];
+    const cachedImage = cachedValues[trackIds.length + i];
+
+    if (!cachedDuration) {
       missingIds.push(trackId);
       continue;
     }
 
-    const parsed = parseInt(cached, 10);
+    const parsed = parseInt(cachedDuration, 10);
     if (Number.isFinite(parsed) && parsed > 0) {
-      durationById.set(trackId, parsed);
+      trackDataById.set(trackId, {
+        durationSec: parsed,
+        spotifyImageUrl: cachedImage || undefined,
+      });
+
+      if (!cachedImage) {
+        missingImageIds.push(trackId);
+      }
     } else {
       missingIds.push(trackId);
     }
   }
 
-  if (missingIds.length === 0) return durationById;
+  if (missingIds.length > 0) {
+    const batches = chunkArray(missingIds, SPOTIFY_BATCH_SIZE);
+    const batchResults = await mapWithConcurrency(
+      batches,
+      SPOTIFY_BATCH_PARALLELISM,
+      async (batch) => fetchSpotifyTrackData(batch),
+    );
 
-  const batches = chunkArray(missingIds, SPOTIFY_BATCH_SIZE);
-  const batchResults = await mapWithConcurrency(
-    batches,
-    SPOTIFY_BATCH_PARALLELISM,
-    async (batch) => fetchSpotifyTrackDurations(batch),
-  );
-
-  for (const resultMap of batchResults) {
-    for (const [trackId, durationSec] of resultMap) {
-      durationById.set(trackId, durationSec);
+    for (const resultMap of batchResults) {
+      for (const [trackId, data] of resultMap) {
+        trackDataById.set(trackId, data);
+      }
     }
   }
 
-  return durationById;
+  if (missingImageIds.length > 0) {
+    const batches = chunkArray(missingImageIds, SPOTIFY_BATCH_SIZE);
+    const batchResults = await mapWithConcurrency(
+      batches,
+      SPOTIFY_BATCH_PARALLELISM,
+      async (batch) => fetchSpotifyTrackData(batch),
+    );
+
+    for (const resultMap of batchResults) {
+      for (const [trackId, data] of resultMap) {
+        const existing = trackDataById.get(trackId);
+        if (existing) {
+          existing.spotifyImageUrl = data.spotifyImageUrl;
+        } else {
+          trackDataById.set(trackId, data);
+        }
+      }
+    }
+  }
+
+  return trackDataById;
 }
 
 async function searchSpotifyTrackId(artist: string, title: string) {
@@ -409,8 +457,11 @@ async function searchSpotifyTrackId(artist: string, title: string) {
   return item?.id;
 }
 
-async function fetchSpotifyTrackDurations(trackIds: string[]) {
-  const out = new Map<string, number>();
+async function fetchSpotifyTrackData(trackIds: string[]) {
+  const out = new Map<
+    string,
+    { durationSec: number; spotifyImageUrl?: string }
+  >();
   if (trackIds.length === 0) return out;
 
   const params = new URLSearchParams({ ids: trackIds.join(",") });
@@ -423,13 +474,26 @@ async function fetchSpotifyTrackDurations(trackIds: string[]) {
   for (const track of tracks) {
     if (!track?.id || !track.duration_ms) continue;
     const durationSec = Math.max(1, Math.round(track.duration_ms / 1000));
-    out.set(track.id, durationSec);
+
+    const imageUrl = track.album?.images?.[0]?.url;
+
+    out.set(track.id, { durationSec, spotifyImageUrl: imageUrl });
+
     await connection.set(
       durationRedisKey(track.id),
       String(durationSec),
       "EX",
       SPOTIFY_DURATION_CACHE_TTL_SEC,
     );
+
+    if (imageUrl) {
+      await connection.set(
+        imageUrlRedisKey(track.id),
+        imageUrl,
+        "EX",
+        SPOTIFY_DURATION_CACHE_TTL_SEC,
+      );
+    }
   }
 
   return out;

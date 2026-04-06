@@ -95,7 +95,7 @@
         <DropdownMenu.Group>
           <DropdownMenu.Item
             class="cursor-pointer"
-            onclick={() => goto("/settings")}
+            onclick={() => goto("/dashboard/settings")}
           >
             <SettingsIcon class="mr-2 size-4" />
             Settings
