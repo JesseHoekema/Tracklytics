@@ -96,21 +96,15 @@
     })),
   );
 
-  const topGenresData = [
-    { genre: "Indie Pop", count: 450 },
-    { genre: "Alternative", count: 380 },
-    { genre: "Electronic", count: 320 },
-    { genre: "Soul", count: 210 },
-    { genre: "Jazz", count: 180 },
-    { genre: "Folk", count: 120 },
-  ];
+  const topListeningTimesData = $derived(
+    (data.topListeningTimes ?? []).map((item) => ({
+      timeRange: item.label,
+      plays: item.playCount,
+    })),
+  );
 
   const chartConfig = {
     plays: { label: "Plays", color: "var(--chart-1)" },
-  } satisfies Chart.ChartConfig;
-
-  const genreChartConfig = {
-    count: { label: "Plays", color: "var(--chart-1)" },
   } satisfies Chart.ChartConfig;
 
   const pages = $derived([
@@ -133,6 +127,9 @@
 
   const topArtistName = $derived(topArtistsData[0]?.artist ?? "No data");
   const topSongName = $derived(topSongsData[0]?.song ?? "No data");
+  const topListeningTimeLabel = $derived(
+    topListeningTimesData[0]?.timeRange ?? "No data",
+  );
 
   let chartType = $state("pie");
   let scrollContainer = $state<HTMLDivElement | null>(null);
@@ -218,11 +215,11 @@
   <Card.Root>
     <Card.Header class="pb-2">
       <Card.Title class="text-sm font-medium text-muted-foreground"
-        >Top Genre</Card.Title
+        >Top Listening Time</Card.Title
       >
     </Card.Header>
     <Card.Content>
-      <div class="text-2xl font-bold">Indie Pop</div>
+      <div class="text-2xl font-bold">{topListeningTimeLabel}</div>
     </Card.Content>
   </Card.Root>
 </div>
@@ -487,29 +484,30 @@
     </Card.Content>
   </Card.Root>
 </div>
-<!-- Top Genres Card -->
+<!-- Top Listening Times Card -->
 <div class="mt-4">
   <Card.Root class="h-[400px]">
     <Card.Header>
-      <Card.Title>Top Genres</Card.Title>
-      <Card.Description>Listening count by genre (last 7 days)</Card.Description
+      <Card.Title>Top Listening Times</Card.Title>
+      <Card.Description
+        >Most active hourly listening windows ({selectedRangeLabel})</Card.Description
       >
     </Card.Header>
     <Card.Content>
-      <Chart.Container config={genreChartConfig} class="h-[300px] w-full">
+      <Chart.Container config={chartConfig} class="h-[300px] w-full">
         <BarChart
           labels={{ offset: 12 }}
-          data={topGenresData}
+          data={topListeningTimesData}
           orientation="horizontal"
           yScale={scaleBand().padding(0.25)}
-          y="genre"
+          y="timeRange"
           axis="y"
-          c={(d: (typeof topGenresData)[0]) => d.genre}
+          c={(d: (typeof topListeningTimesData)[0]) => d.timeRange}
           cRange={genreColors}
           rule={false}
           series={[
             {
-              key: "count",
+              key: "plays",
               label: "Plays",
             },
           ]}

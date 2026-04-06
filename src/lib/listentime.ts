@@ -1,4 +1,5 @@
 import { prisma } from "$lib/prisma";
+import { Prisma } from "../../generated/prisma/client";
 
 type TimeParts = {
   hours: number;
@@ -49,6 +50,19 @@ export type SongListenCountsResult = {
   timeSlot: TimeSlot;
   limit: TopLimit;
   songs: SongListenCount[];
+};
+
+export type ListeningTimeBucket = {
+  hourStart: number;
+  hourEnd: number;
+  label: string;
+  playCount: number;
+};
+
+export type ListeningTimeBucketsResult = {
+  timeSlot: TimeSlot;
+  limit: TopLimit;
+  buckets: ListeningTimeBucket[];
 };
 
 export function secondsToHMS(totalSeconds: number): TimeParts {
@@ -119,6 +133,9 @@ export async function getTotalListeningTimeForUser(
     _sum: { durationSec: true },
     where: {
       userId,
+      durationSec: {
+        not: 21000,
+      },
       ...(timeSlot === "all time" ? {} : { playedAt }),
     },
   });
@@ -207,6 +224,62 @@ export async function getSongListenCountsForUser(
       artist: row.artist,
       playCount: row._count._all,
     })),
+  };
+}
+
+function toHourLabel(hourStart: number): string {
+  const hourEnd = (hourStart + 1) % 24;
+  const start = `${String(hourStart).padStart(2, "0")}:00`;
+  const end = `${String(hourEnd).padStart(2, "0")}:00`;
+  return `${start}-${end}`;
+}
+
+export async function getTopListeningTimesForUser(
+  userId: string,
+  timeSlot: TimeSlot,
+  limit: TopLimit = 10,
+): Promise<ListeningTimeBucketsResult> {
+  const playedAt = getDateRangeForTimeSlot(timeSlot);
+  const normalizedLimit =
+    limit === "all" ? "all" : Math.max(1, Math.floor(limit));
+
+  const whereDateSql =
+    timeSlot === "all time"
+      ? Prisma.empty
+      : Prisma.sql`AND playedAt >= ${playedAt.gte!} AND playedAt < ${playedAt.lt!}`;
+
+  const limitSql =
+    normalizedLimit === "all"
+      ? Prisma.empty
+      : Prisma.sql`LIMIT ${normalizedLimit}`;
+
+  const rows = await prisma.$queryRaw<
+    Array<{ hourStart: number; playCount: bigint | number }>
+  >(Prisma.sql`
+    SELECT
+      HOUR(playedAt) AS hourStart,
+      COUNT(*) AS playCount
+    FROM scrobble
+    WHERE userId = ${userId}
+      ${whereDateSql}
+    GROUP BY HOUR(playedAt)
+    ORDER BY playCount DESC, hourStart ASC
+    ${limitSql}
+  `);
+
+  return {
+    timeSlot,
+    limit: normalizedLimit,
+    buckets: rows.map((row) => {
+      const hourStart = Number(row.hourStart);
+      const hourEnd = (hourStart + 1) % 24;
+      return {
+        hourStart,
+        hourEnd,
+        label: toHourLabel(hourStart),
+        playCount: Number(row.playCount),
+      };
+    }),
   };
 }
 

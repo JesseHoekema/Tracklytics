@@ -3,6 +3,7 @@ import type { PageServerLoad } from "./$types";
 import {
   getArtistListenCountsForUser,
   getSongListenCountsForUser,
+  getTopListeningTimesForUser,
   getTotalListeningTimeForUser,
   type TimeSlot,
 } from "$lib/listentime";
@@ -26,16 +27,19 @@ export const load: PageServerLoad = async ({ locals, url }) => {
   }
 
   const { range, slot } = toTimeSlot(url.searchParams.get("range"));
-  const [totalListeningTime, topArtists, topSongs] = await Promise.all([
-    getTotalListeningTimeForUser(locals.user.id, slot),
-    getArtistListenCountsForUser(locals.user.id, slot, 10),
-    getSongListenCountsForUser(locals.user.id, slot, 10),
-  ]);
+  const [totalListeningTime, topArtists, topSongs, topListeningTimes] =
+    await Promise.all([
+      getTotalListeningTimeForUser(locals.user.id, slot),
+      getArtistListenCountsForUser(locals.user.id, slot, 10),
+      getSongListenCountsForUser(locals.user.id, slot, 10),
+      getTopListeningTimesForUser(locals.user.id, slot, 10),
+    ]);
 
   return {
     selectedRange: range,
     totalListeningTime,
     topArtists: topArtists.artists,
     topSongs: topSongs.songs,
+    topListeningTimes: topListeningTimes.buckets,
   };
 };
