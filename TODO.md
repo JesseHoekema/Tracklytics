@@ -7,3 +7,5 @@
 - [ ] add a country selector to show leaderboard of that country
 
 - [ ] Make streaks work and make streaks page
+
+- [ ] Make popup to connect lastfm if no data and user for the user
