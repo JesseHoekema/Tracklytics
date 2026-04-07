@@ -284,3 +284,66 @@ export async function getTopListeningTimesForUser(
 }
 
 export type { TimeSlot, TimeParts };
+
+export type LeaderboardUser = {
+  rank: number;
+  userId: string;
+  userName: string | null;
+  totalSeconds: number;
+  totalPlays: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+};
+
+export type LeaderboardResult = {
+  timeSlot: TimeSlot;
+  users: LeaderboardUser[];
+};
+
+export async function getListeningTimeLeaderboard(
+  timeSlot: TimeSlot = "last 7 days",
+  limit: number = 50
+): Promise<LeaderboardResult> {
+  const playedAt = getDateRangeForTimeSlot(timeSlot);
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      userId: string;
+      userName: string | null;
+      totalSeconds: bigint | number;
+      totalPlays: bigint | number;
+    }>
+  >(Prisma.sql`
+    SELECT
+      s.userId,
+      u.name as userName,
+      SUM(s.durationSec) as totalSeconds,
+      COUNT(*) as totalPlays
+    FROM scrobble s
+    JOIN user u ON s.userId = u.id
+    WHERE 1=1
+    ${timeSlot === "all time" ? Prisma.empty : Prisma.sql`AND s.playedAt >= ${playedAt.gte!} AND s.playedAt < ${playedAt.lt!}`}
+    GROUP BY s.userId, u.name
+    ORDER BY totalSeconds DESC
+    LIMIT ${limit}
+  `);
+
+  const users: LeaderboardUser[] = rows.map((row, index) => {
+    const totalSeconds = Number(row.totalSeconds);
+    const { hours, minutes, seconds } = secondsToHMS(totalSeconds);
+
+    return {
+      rank: index + 1,
+      userId: row.userId,
+      userName: row.userName,
+      totalSeconds,
+      totalPlays: Number(row.totalPlays),
+      hours,
+      minutes,
+      seconds,
+    };
+  });
+
+  return { timeSlot, users };
+}
