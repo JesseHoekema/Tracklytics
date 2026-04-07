@@ -64,21 +64,51 @@
     });
   };
 
-  const genreColors = [
-    "var(--chart-1)",
-    "var(--chart-2)",
-    "var(--chart-3)",
-    "var(--chart-4)",
-    "var(--chart-5)",
-    "oklch(0.72 0.16 22)",
+  const FALLBACK_COLORS = [
+    "#60a5fa",
+    "#f472b6",
+    "#fb923c",
+    "#facc15",
+    "#4ade80",
+    "#2dd4bf",
+    "#a78bfa",
+    "#f87171",
+    "#38bdf8",
+    "#e879f9",
+    "#34d399",
+    "#fbbf24",
+    "#818cf8",
+    "#fb7185",
+    "#22d3ee",
+    "#a3e635",
+    "#c084fc",
+    "#f97316",
+    "#14b8a6",
+    "#8b5cf6",
+    "#ec4899",
+    "#84cc16",
+    "#06b6d4",
+    "#d946ef",
+    "#10b981",
   ];
 
+  const shuffledColors = [...FALLBACK_COLORS]
+    .map((color) => ({ color, sort: Math.random() }))
+    .sort((a, b) => a.sort - b.sort)
+    .map((item) => item.color);
+
+  const colorByName = new Map<string, string>();
+  let nextColorIndex = 0;
+
   const getColor = (name: string) => {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return genreColors[Math.abs(hash) % genreColors.length];
+    const existing = colorByName.get(name);
+    if (existing) return existing;
+
+    const color =
+      shuffledColors[nextColorIndex % shuffledColors.length] ?? "#60a5fa";
+    colorByName.set(name, color);
+    nextColorIndex += 1;
+    return color;
   };
 
   const topArtistsData = $derived(
@@ -503,7 +533,7 @@
           y="timeRange"
           axis="y"
           c={(d: (typeof topListeningTimesData)[0]) => d.timeRange}
-          cRange={genreColors}
+          cRange={FALLBACK_COLORS}
           rule={false}
           series={[
             {
